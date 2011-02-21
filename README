@@ -1,0 +1,1 @@
+a simple implementation of realtime rock paper scissors w/ chat in node.js, socket.io and redis using redis's pub/sub pattern for event propagation.

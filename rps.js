@@ -29,6 +29,7 @@ function gencookie()
 function static_file_serve(staticres,res) 
 {
     var realpath = './static/'+staticres[1];
+    if (/\.\./.exec(staticres[1])) throw "permission denied for "+staticres[1];
     fs.stat(realpath,function(err,stats) {
 	if (err) 	{
 	    res.writeHead(404,{'Content-Type':'text/html'});
