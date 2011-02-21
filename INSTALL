@@ -1,0 +1,10 @@
+sudo apt-get install g++
+
+#node
+git clone git://github.com/ry/node.git
+cd node
+./configure && make && sudo make install
+
+#npm
+curl http://npmjs.org/install.sh | sh
+npm install socket.io underscore redis
