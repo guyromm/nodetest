@@ -1,0 +1,27 @@
+
+
+    <p>you are <i style='color:red'><%=role%></i>. <%=(role=='spectator'?'':(oponent_moved?'Oponent HAS MOVED. ':'Oponent has not moved.'))%>
+
+<% var plnames = ['player1','player2'];
+for (var i=0;i<plnames.length;i++) { 
+  if (presence[plnames[i]] && presence[plnames[i]]=='true') { %><b><%=plnames[i]%> present. </b><% }
+} %>
+<hr />
+
+  <% for (var i=0;i<options.length;i++) { 
+     var opt = options[i];
+     %>
+     <input type='radio' name='mysel' class='sel' value="<%=opt%>" <%=(mysel==opt?' checked=1':'')%> <%=(outcome?'disabled':'')%>/> <%=opt%><br />
+     <% } %>
+
+     <% if (outcome) { %>
+     <h3>Game over: <%=outcome%></h3>
+
+     <% if (rematch) { %>
+     <a href="/<%=rematch%>">rematch has been created</a>
+     <% } else { %>
+     <a id='offer_rematch' href="#">offer rematch</a>
+     <% } %>
+
+     <% } %>
+

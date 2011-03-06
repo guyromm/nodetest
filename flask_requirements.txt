@@ -1,0 +1,6 @@
+redis
+gevent
+gevent-websocket
+gevent-socketio
+Flask
+Flask-Redis
