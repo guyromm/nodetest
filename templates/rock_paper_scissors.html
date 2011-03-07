@@ -5,8 +5,9 @@
   <script type='text/javascript' src='/static/underscore.js'></script>
   <title>Rock paper scissors game {{ gameid }}</title>
   <!--we use the native html5 impl. <script src="/static/socket.io.js"></script>-->
+  <script src="http://cdn.socket.io/stable/socket.io.js"></script>
   <script type='text/javascript'>
-var io = {Socket:WebSocket};
+//var io = {Socket:WebSocket};
 		
        if (typeof(console)=='undefined') console = {log:function() {}};
        
@@ -29,8 +30,11 @@ var io = {Socket:WebSocket};
        }
 
 var gameid = "{{ gameid }}";
-var socket = new io.Socket('ws://localhost:8124/socket.io'); //null,{port:8124,rememberTransport:true,timeout:1500,resource:'socket.io'});
-//socket.connect();
+var socket = new io.Socket(null,{port:8124,rememberTransport:false,timeout:1500}); // 'ws://localhost:8124/socket.io'); //
+socket.connect();
+//var socket = new WebSocket('ws://localhost:8124/socket.io');
+console.log('opened connection with ',socket);
+
 socket.on('connect', function(){ 
     console.log('connected'); 
     socket.send(JSON.stringify({'op':'connect','gameid':gameid,'rawcookie':document.cookie}));
@@ -85,14 +89,17 @@ socket.on('disconnect', function(){ console.log('disconnected; reconnecting!'); 
 </div>
 
 <script type='text/javascript'>
-	  attachevents();
+  attachevents();
+  
+  document.getElementById('sendchat').addEventListener('click',function(ev) {
+  var vl = document.getElementById('chatinput').value;
+  console.log('sending chat msg',vl,'over',socket);
+  socket.send(JSON.stringify({'op':'send_chat','text':vl}));
+  document.getElementById('chatinput').value='';
+  document.getElementById('chatinput').focus();
+  
+  },false);
 
-	       document.getElementById('sendchat').addEventListener('click',function(ev) {
-		   socket.send(JSON.stringify({'op':'send_chat','text':document.getElementById('chatinput').value}));
-		   document.getElementById('chatinput').value='';
-		   document.getElementById('chatinput').focus();
-		   
-	       },false);
 </script>
 <!--GAMEDIVPLACEHOLDER-->
 </body>
