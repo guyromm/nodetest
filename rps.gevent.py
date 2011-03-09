@@ -59,7 +59,7 @@ def get_new_game_id(**extra_keys):
     
     return game_id
 
-def updgame(gameid,values,i_am=None):
+def updgame(gameid,values,i_am=None,nopublish=False):
     gp = 'game:%s:'%gameid
     nvals = {}
     for k,v in values.items():
@@ -68,9 +68,25 @@ def updgame(gameid,values,i_am=None):
         nvals[gp+'last_upd_by']=i_am
     nvals[gp+'last_stamp']=time.time()
     print 'UPDGAME %s with %s'%(gameid,values)
-    r.mset(nvals)
-    chstr = json.dumps({'op':'gamechange','game':get_game(gameid)})
-    zmq_pub_socket.send_unicode(u'%s;;;;%s'%(gameid,chstr))
+    rt = r.mset(nvals)
+    if rt:
+        gm = get_game(gameid)
+        if gm['p1sel'] and gm['p2sel'] and not gm['outcome']:
+
+            if (gm['p1sel']=='scissors' and gm['p2sel']=='rock'): outcome='player2_victory'
+            elif (gm['p1sel']=='rock' and gm['p2sel']=='paper'): outcome='player2_victory'
+            elif (gm['p1sel']=='paper' and gm['p2sel']=='scissors'): outcome='player2_victory'
+            elif (gm['p2sel']=='scissors' and gm['p1sel']=='rock'): outcome='player1_victory'
+            elif (gm['p2sel']=='rock' and gm['p1sel']=='paper'): outcome='player1_victory'
+            elif (gm['p2sel']=='paper' and gm['p1sel']=='scissors'): outcome='player1_victory'
+            elif (gm['p1sel']==gm['p2sel']): outcome='draw'
+            else: raise Exception( "unknown combo "+gm['p1sel']+","+gm['p2sel'])
+            print 'PLAYING OUT %s : %s => %s'%(gm['p1sel'],gm['p2sel'],outcome)
+            updgame(gameid,{'outcome':outcome},i_am,nopublish=True)
+
+    if not nopublish:
+        chstr = json.dumps({'op':'gamechange','game':get_game(gameid)})
+        zmq_pub_socket.send_unicode(u'%s;;;;%s'%(gameid,chstr))
     
 def html(s):
     return '&quot;'.join('&gt;'.join('&lt;'.join('&amp;'.join(s.split('&')).split( '<')).split('>')).split('"'))
@@ -96,8 +112,8 @@ def get_tplvars(game_id,i_am,game):
         'gameid':game_id,
         'role': i_am,
         'ajax': False, #request.is_xhr,
-        'presence':[],
-        'options':['','rocks','paper','scissors'],
+        'presence':game['presence'],
+        'options':['','rock','paper','scissors'],
         'outcome':game['outcome'],
         'rematch':game['rematch']
         }
@@ -117,7 +133,7 @@ def hello_world(env, start_response):
     
     if gameres:
         game_id = gameres.group(1)
-        start_response('200 OK', [('Content-Type', 'text/html')])
+
         game = get_game(game_id)
         authcookie = getauthcookie('HTTP_COOKIE' in env and env['HTTP_COOKIE'] or None)
         print 'auth cookie is %s'%authcookie
@@ -127,14 +143,22 @@ def hello_world(env, start_response):
         i_am = 'spectator'
         respond = True
 
+        nheads = [('Content-Type', 'text/html')]
+        
         if authcookie == game['p1cookie']:
             i_am = 'player1'
         elif authcookie == game['p2cookie']:
             i_am = 'player2'
-
-
-        tplvars = get_tplvars(game_id,i_am,game)
+        elif not game['p2cookie']:
+            i_am = 'player2'
+            p2cookie =  nowhex()[:8]
+            nheads.append(('Set-Cookie','rps=%s'%p2cookie))
+            updgame(game_id,{'p2cookie':p2cookie,'player2_present':True},i_am)
+            game['presence']['player2']=True
+        start_response('200 OK', nheads)
         
+        tplvars = get_tplvars(game_id,i_am,game)
+
         buf = StringIO()
         ctx = Context(buf,**tplvars)
         #for tplk,tplv in tplvars.items(): setattr(ctx,tplk,tplv)
@@ -179,6 +203,7 @@ def hello_world(env, start_response):
         ws = env["wsgi.websocket"]
 
         def websocket_handler(ws,zmq_pub_socket):
+            print 'WEBSOCKETHANDLER, SUBSCRIBING TO %s'%data['gameid']
             zmq_sub_socket.setsockopt_unicode(zmq.SUBSCRIBE,unicode(data['gameid'])) #we take all messages for now
             while True:
                 message = ws.wait()
@@ -206,10 +231,16 @@ def hello_world(env, start_response):
                             if cook == tgm['p1cookie']: updgame(data['gameid'],{'p1sel':d['val']},data['i_am'])
                             elif cook == tgm['p2cookie']: updgame(data['gameid'],{'p2sel':d['val']},data['i_am'])
                             else: raise Exception( "unauthorized attempt to move in game "+data['gameid']+' by '+cook)
+                    elif d['op']=='offer_rematch':
+                        ngameid = get_new_game_id(**{"p1cookie":data['game']['p1cookie'],"p2cookie":data['game']['p2cookie']})
+			updgame(data['gameid'],{"rematch":ngameid},data['i_am'])
+                        ws.send(json.dumps({"op":"rematch_created","game_id":ngameid}))
+                    else:
+                        raise Exception(d)
                 else:
                     updgame(data['gameid'],{"%s_present"%data['i_am']:False})
                     print 'received None in ws.wait(); breaking conn.'
-                    #TODO: unsubscribe from game in 0mq 
+                    zmq_sub_socket.setsockopt_unicode(zmq.UNSUBSCRIBE,unicode(data['gameid'])) #UNSUB                    
                     break
                 #ws.send(message)
 
@@ -218,22 +249,28 @@ def hello_world(env, start_response):
                 print 'looping on zmq sub socket recv'
                 recv = zmq_sub_socket.recv()
                 gameid,recv = recv.split(';;;;')
-                print 'json parsing %s'%recv
+                #print 'json parsing %s'%recv
                 o = json.loads(recv)
                 if o['op']=='send_chat':
                     ws.send(json.dumps(o))
-                    print 'SENT CHAT on %s to %s'%(gameid,data['i_am'])
+                    print 'RECV CHAT on %s to %s'%(gameid,data['i_am'])
                 else:
                     assert gameid==data['gameid']
                     game = get_game(gameid)
-                    print 'SUBSCRIPTION RECV for %s:  %s'%(gameid,recv)
+                    print 'SUBSCRIPTION RECV for %s by %s'%(gameid,data['i_am'])
                     buf = StringIO()
                     tplvars = get_tplvars(gameid,data['i_am'],game)
                     ctx = Context(buf,**tplvars)
                     tpls['gamediv'].render_context(ctx)
                     gamediv = buf.getvalue()
-                    ws.send(json.dumps({'op':'gamechange','game':recv,'atpl':gamediv}))
-                    print 'SENT GAMECHANGE on %s to %s'%(gameid,data['i_am'])
+                    try:
+                        ws.send(json.dumps({'op':'gamechange','game':recv,'atpl':gamediv}))
+                        print 'SENT GAMECHANGE on %s to %s'%(gameid,data['i_am'])
+                    except:
+                        print 'looks like CONN IS DOWN. we better unsubscribe'
+                        zmq_sub_socket.setsockopt_unicode(zmq.UNSUBSCRIBE,unicode(data['gameid'])) #UNSUB
+                        updgame(data['gameid'],{"%s_present"%data['i_am']:False})
+                        
                 ws.send(json.dumps({'op':'noop'})) #noop is a workaround for likely buffered input on the client's websocket
         print 'instantiating gevent greenlets'
         gevent.joinall([gevent.spawn(websocket_handler,ws,zmq_pub_socket),gevent.spawn(zmq_sub_handler,ws,zmq_sub_socket)])

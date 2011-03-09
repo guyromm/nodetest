@@ -1,9 +1,9 @@
 % if not ajax:
 <html>
 <head>
-    ##<script type='text/javascript' src='/static/jquery.js'></script>
+    ## <script type='text/javascript' src='/static/jquery.js'></script>
      ##<script type='text/javascript' src='https://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js'></script>
-     ##<script type='text/javascript' src='/static/underscore.js'></script>
+    ## <script type='text/javascript' src='/static/underscore.js'></script>
   <title>Rock paper scissors game ${gameid}</title>
   <!--we use the native html5 impl. <script src="/static/socket.io.js"></script>-->
      ## <script src="http://cdn.socket.io/stable/socket.io.js"></script>
@@ -41,8 +41,9 @@ socket.addEventListener('open',function(){
 	socket.send(JSON.stringify({'op':'connect','gameid':gameid,'rawcookie':document.cookie}));
     },false);
 socket.onmessage =  function(m){ 
-    console.log('got message, %o',m.data); 
+
     var d = JSON.parse(m.data);
+    console.log('got message, %o',d); //m.data.length); 
     if (d.op=='gamechange')
     {
 
@@ -52,7 +53,7 @@ socket.onmessage =  function(m){
 	var gd = document.getElementById('gamediv');
 	var  m = d.atpl;
 	console.log('rendering template with %o on %o',d.atpl.length,gd);
-	//gd.innerHTML = m;
+	gd.innerHTML = m;
 	attachevents();
     }
     else if (d.op=='rematch_created')
