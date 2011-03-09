@@ -1,27 +1,38 @@
+<p>you are <i style='color:red'>${role}</i>. 
+% if role!='spectator':
 
+% if oponent_moved:
+Oponent HAS MOVED.
+% else: ## else1
+Oponent hasn't moved.
+% endif
 
-    <p>you are <i style='color:red'><%=role%></i>. <%=(role=='spectator'?'':(oponent_moved?'Oponent HAS MOVED. ':'Oponent has not moved.'))%>
+% endif
 
-<% var plnames = ['player1','player2'];
-for (var i=0;i<plnames.length;i++) { 
-  if (presence[plnames[i]] && presence[plnames[i]]=='true') { %><b><%=plnames[i]%> present. </b><% }
-} %>
+<% plnames = ['player1','player2'] %>
+% for p1n in plnames:
+% if p1n in presence and presence[p1n]:
+<b>${p1n} present. </b>
+% endif
+% endfor
+
 <hr />
 
-  <% for (var i=0;i<options.length;i++) { 
-     var opt = options[i];
-     %>
-     <input type='radio' name='mysel' class='sel' value="<%=opt%>" <%=(mysel==opt?' checked=1':'')%> <%=(outcome?'disabled':'')%>/> <%=opt%><br />
-     <% } %>
-
-     <% if (outcome) { %>
-     <h3>Game over: <%=outcome%></h3>
-
-     <% if (rematch) { %>
-     <a href="/<%=rematch%>">rematch has been created</a>
-     <% } else { %>
-     <a id='offer_rematch' href="#">offer rematch</a>
-     <% } %>
-
-     <% } %>
-
+% for opt in options:
+     <input type='radio' name='mysel' class='sel' value="${opt}" \
+% if mysel==opt:
+checked=1\
+% endif
+% if outcome:
+disabled\
+% endif
+/> ${opt}<br />
+% endfor
+% if outcome:
+<h3>Game over: ${outcome}</h3>
+% if rematch:
+<a href="/${rematch}">rematch has been created</a>
+% else: ## else2
+<a id='offer_rematch' href="#">offer rematch</a>
+% endif
+% endif

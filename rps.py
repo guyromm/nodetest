@@ -75,6 +75,11 @@ if app.config['DEBUG']:
       '/': os.path.join(os.path.dirname(__file__), 'static')
     })
 
+@app.route('/socket.io/lib/vendor/web-socket-js/WebSocketMain.swf')
+def wsm():
+    fp = open('WebSocketMain.swf','r')
+    return fp.read()
+
 @app.route('/<game_id>')
 def game(game_id):
     game = get_game(game_id)
@@ -138,6 +143,10 @@ def socketio():
     zmq_pub_socket.bind("ipc://rps.events.ipc")
 
     def handle_socketio_connection(socketio_connection, pubsock,subsock):
+        ctx = app.test_request_context()
+        ctx.push()
+        app.preprocess_request()
+        
         print 'HANDLE_SOCKETIO'
         while True:
             messages = socketio_connection.recv()
@@ -172,9 +181,11 @@ def socketio():
             dt = json.loads(recv.split(';;;;')[1])
             print 'RECEIVED %s'%dt
             s.send(json.dumps({'op':'chat','user':dt['user'],'text':dt['text']}))
-    gevent.spawn(handle_subscription_listener)
-    handle_socketio_connection(s,zmq_pub_socket,zmq_sub_socket)
-    #return gevent.joinall([gevent.spawn(handle_subscription_listener),gevent.spawn(handle_socketio_connection,s,zmq_pub_socket,zmq_sub_socket)])
+    # gevent.spawn(handle_subscription_listener)
+    # handle_socketio_connection(s,zmq_pub_socket,zmq_sub_socket)
+    #gevent.spawn(handle_subscription_listener)
+    #gevent.spawn(handle_socketio_connection,s,zmq_pub_socket,zmq_sub_socket)
+    return gevent.joinall([gevent.spawn(handle_subscription_listener),gevent.spawn(handle_socketio_connection,s,zmq_pub_socket,zmq_sub_socket)])
     # return gevent.joinall([
     #     #gevent.spawn(handle_redis_subscription, g.redis, s),
     #     gevent.spawn(handle_socketio_connection, s, zmq_pub_socket,zmq_sub_socket),

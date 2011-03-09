@@ -1,13 +1,14 @@
-{% if not ajax %}
+% if not ajax:
 <html>
 <head>
-  <script type='text/javascript' src='/static/jquery.js'></script>
-  <script type='text/javascript' src='/static/underscore.js'></script>
-  <title>Rock paper scissors game {{ gameid }}</title>
+    ##<script type='text/javascript' src='/static/jquery.js'></script>
+     ##<script type='text/javascript' src='https://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js'></script>
+     ##<script type='text/javascript' src='/static/underscore.js'></script>
+  <title>Rock paper scissors game ${gameid}</title>
   <!--we use the native html5 impl. <script src="/static/socket.io.js"></script>-->
-  <script src="http://cdn.socket.io/stable/socket.io.js"></script>
+     ## <script src="http://cdn.socket.io/stable/socket.io.js"></script>
   <script type='text/javascript'>
-//var io = {Socket:WebSocket};
+var io = {Socket:WebSocket};
 		
        if (typeof(console)=='undefined') console = {log:function() {}};
        
@@ -29,63 +30,65 @@
 
        }
 
-var gameid = "{{ gameid }}";
-var socket = new io.Socket(null,{port:8124,rememberTransport:false,timeout:1500}); // 'ws://localhost:8124/socket.io'); //
-socket.connect();
-//var socket = new WebSocket('ws://localhost:8124/socket.io');
+var gameid = "${gameid}";
+//var socket = new io.Socket(null,{port:8124,rememberTransport:false,timeout:1500}); // 'ws://localhost:8124/socket.io'); //
+//socket.connect();
+var socket = new WebSocket('ws://192.168.123.119:8088/websocket/'+gameid);
 console.log('opened connection with ',socket);
 
-socket.on('connect', function(){ 
-    console.log('connected'); 
-    socket.send(JSON.stringify({'op':'connect','gameid':gameid,'rawcookie':document.cookie}));
-}) ;
-socket.on('message', function(m){ 
-    //console.log('got message, %o',m); 
-    var d = JSON.parse(m);
+socket.addEventListener('open',function(){ 
+	console.log('connected'); 
+	socket.send(JSON.stringify({'op':'connect','gameid':gameid,'rawcookie':document.cookie}));
+    },false);
+socket.onmessage =  function(m){ 
+    console.log('got message, %o',m.data); 
+    var d = JSON.parse(m.data);
     if (d.op=='gamechange')
     {
 
 	/*console.log('changing game'); // %o',m);*/
-	console.log('rendering template with %o',d.tplvars);
-	var m = _.template(document.getElementById('gamedivsrc').innerHTML,d.tplvars);
+
+	//var m = _.template(document.getElementById('gamedivsrc').innerHTML,d.tplvars);
 	var gd = document.getElementById('gamediv');
-	gd.innerHTML = m;
+	var  m = d.atpl;
+	console.log('rendering template with %o on %o',d.atpl.length,gd);
+	//gd.innerHTML = m;
 	attachevents();
     }
-
     else if (d.op=='rematch_created')
     {
 	location.href="/"+d.game_id;
     }
-    else if (d.op=='chat')
+    else if (d.op=='send_chat')
     {
 	console.log(d);
 	document.getElementById('chatlog').innerHTML+='<b>'+d.user+'</b>: '+d.text+'<br />';
     }
+    else if (d.op=='noop');
     else
 	throw "unknown op "+d.op;
-}) ;
-socket.on('disconnect', function(){ console.log('disconnected; reconnecting!'); socket.connect();  });
+}
+socket.ondisconnect = function(){ console.log('disconnected; reconnecting!'); socket.connect();  }
 
      </script>
 <script type='text/html' id='gamedivsrc'>
-{{ gamedivsrc }}
+${gamedivsrc|n}
 </script>
 </head>
 <body>
-[<a href="/">home</a> | <a href="/{{ gameid }}">game link</a>] <br />
-  <h3>Rock paper scissors game {{ gameid }}</h3>
+[<a href="/">home</a> | <a href="/${gameid}">game link</a>] <br />
+  <h3>Rock paper scissors game ${gameid}</h3>
 
 <div id='chatlog'></div>
 <input type='text' id='chatinput' value='' /><input type='button' id='sendchat' value='chat' />
 
 
     <div id='gamediv'>
-{% endif %}
+% endif
 
-{{ gamediv }}
+${gamediv|n}
 
-{% if not ajax %}
+% if not ajax:
 </div>
 
 <script type='text/javascript'>
@@ -104,4 +107,4 @@ socket.on('disconnect', function(){ console.log('disconnected; reconnecting!'); 
 <!--GAMEDIVPLACEHOLDER-->
 </body>
 </html>
-{% endif %}
+% endif

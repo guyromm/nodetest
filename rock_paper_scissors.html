@@ -4,7 +4,6 @@
   <script type='text/javascript' src='/static/jquery.js'></script>
   <script type='text/javascript' src='/static/underscore.js'></script>
   <title>Rock paper scissors game <%=gameid%></title>
-  <script src="/socket.io/socket.io.js"></script>
      <script type='text/javascript'>
 
 		
@@ -31,11 +30,11 @@
     var gameid = "<%=gameid%>";
 var socket = new io.Socket(null,{port:8124,rememberTransport:true,timeout:1500,resource:'socket.io'});
 socket.connect();
-socket.on('connect', function(){ 
+socket.addEventListener('connect', function(){ 
     console.log('connected'); 
     socket.send(JSON.stringify({'op':'connect','gameid':gameid,'rawcookie':document.cookie}));
-}) ;
-socket.on('message', function(m){ 
+},false) ;
+socket.addEventListener('message', function(m){ 
     //console.log('got message, %o',m); 
     var d = JSON.parse(m);
     if (d.op=='gamechange')
@@ -47,7 +46,7 @@ socket.on('message', function(m){
 	var gd = document.getElementById('gamediv');
 	gd.innerHTML = m;
 	attachevents();
-    }
+    },false);
 
     else if (d.op=='rematch_created')
     {
