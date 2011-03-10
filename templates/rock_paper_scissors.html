@@ -1,21 +1,22 @@
 % if not ajax:
 <html>
 <head>
-    ## <script type='text/javascript' src='/static/jquery.js'></script>
+    <script type='text/javascript' src='/static/jquery.js'></script>
      ##<script type='text/javascript' src='https://ajax.googleapis.com/ajax/libs/jquery/1.5.1/jquery.min.js'></script>
-    ## <script type='text/javascript' src='/static/underscore.js'></script>
-  <title>Rock paper scissors game ${gameid}</title>
-  <!--we use the native html5 impl. <script src="/static/socket.io.js"></script>-->
-     ## <script src="http://cdn.socket.io/stable/socket.io.js"></script>
+     <script type='text/javascript' src='/static/underscore.js'></script>
+     <title>Rock paper scissors game ${gameid}</title>
+	 <!--we use the native html5 impl. <script src="/static/socket.io.js"></script>-->
+##  <script src="http://cdn.socket.io/stable/socket.io.js"></script>
+  <script type='text/javascript' src='/static/socket.io.js'></script>
   <script type='text/javascript'>
-var io = {Socket:WebSocket};
+
 		
        if (typeof(console)=='undefined') console = {log:function() {}};
        
 	   function attachevents() {
 	   console.log('(re)atacching events');
 	   var sels = document.getElementsByClassName('sel');
-	   for (var i=0;i<sels.length;i++)
+	   for (var i=0;i < sels.length;i++)
 	       {
 		   sels[i].addEventListener('click',function(ev) {
 			   var selval = ev.target.value;
@@ -31,18 +32,23 @@ var io = {Socket:WebSocket};
        }
 
 var gameid = "${gameid}";
-//var socket = new io.Socket(null,{port:8124,rememberTransport:false,timeout:1500}); // 'ws://localhost:8124/socket.io'); //
-//socket.connect();
-var socket = new WebSocket('ws://192.168.123.119:8088/websocket/'+gameid);
+//var io = {Socket:WebSocket};
+//var socket = new WebSocket('ws://192.168.123.119:8088/websocket/'+gameid);
+
+var socket = new io.Socket(null,{port:8088,rememberTransport:false,timeout:1500}); // 'ws://localhost:8088/socket.io'); //
+socket.connect();
+
 console.log('opened connection with ',socket);
 
-socket.addEventListener('open',function(){ 
+var onopen_func = function()
+    { 
 	console.log('connected'); 
 	socket.send(JSON.stringify({'op':'connect','gameid':gameid,'rawcookie':document.cookie}));
-    },false);
-socket.onmessage =  function(m){ 
-
-    var d = JSON.parse(m.data);
+    }
+var onmessage_func = function(m){ 
+    console.log('PARSE INC MSG');
+    var md = m; // m.data
+    var d = JSON.parse(md);
     console.log('got message, %o',d); //m.data.length); 
     if (d.op=='gamechange')
     {
@@ -69,6 +75,9 @@ socket.onmessage =  function(m){
     else
 	throw "unknown op "+d.op;
 }
+//socket.addEventListener('open',onopen_func ,false);
+socket.on('connect',onopen_func);
+socket.on('message',onmessage_func); //onmessage =  onmessage_func;
 socket.ondisconnect = function(){ console.log('disconnected; reconnecting!'); socket.connect();  }
 
      </script>
@@ -77,7 +86,7 @@ ${gamedivsrc|n}
 </script>
 </head>
 <body>
-[<a href="/">home</a> | <a href="/${gameid}">game link</a>] <br />
+[<a href="/">home</a> | <a href="/${gameid}">game link</a>] | <a href="/info/${gameid}">game info</a> <br />
   <h3>Rock paper scissors game ${gameid}</h3>
 
 <div id='chatlog'></div>

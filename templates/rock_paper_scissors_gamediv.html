@@ -9,9 +9,10 @@ Oponent hasn't moved.
 
 % endif
 
-<% plnames = ['player1','player2'] %>
+<% plnames = ['player1','player2','spectator'] %>
+
 % for p1n in plnames:
-% if p1n in presence and presence[p1n]:
+% if p1n in presence and presence[p1n] and presence[p1n] not in ['False']:
 <b>${p1n} present. </b>
 % endif
 % endfor

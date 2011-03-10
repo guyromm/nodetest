@@ -8,6 +8,8 @@ from StringIO import StringIO
 from geventwebsocket.handler import WebSocketHandler
 from gevent_zeromq import zmq
 
+from socketio import SocketIOServer
+
 #redis connection
 r = redis.Redis('localhost')
 
@@ -26,6 +28,10 @@ context = zmq.Context()
 zmq_pub_socket = context.socket(zmq.PUB)
 zmq_pub_socket.bind("ipc://rps.events.ipc")
 
+def notfalse(val):
+    if val and val not in ['False','None']: return True
+    else: return False
+    
 def get_game(game_id):
     gp = 'game:%s:' % game_id
     gamefields = ['p1cookie','p2cookie','player1_present','player2_present','stamp','last_stamp','last_upd_by','p1sel','p2sel','outcome','rematch'];
@@ -33,8 +39,8 @@ def get_game(game_id):
     values = r.mget(keys)
     game = dict(zip(gamefields, values))
     game['presence'] = {
-        'player1': bool(game.get('player1_present')),
-        'player2': bool(game.get('player2_present')),
+        'player1': bool(notfalse(game.get('player1_present')) and game.get('player1_present')),
+        'player2': bool(notfalse(game.get('player2_present')) and game.get('player2_present')),
     }
     game['id'] = game_id
     return game
@@ -49,7 +55,7 @@ def get_new_game_id(**extra_keys):
         gp+'stamp': gamestamp,
         gp+'last_stamp': gamestamp,
         gp+'last_upd_by': 'player1',
-        gp+'player1_present': True,
+        #gp+'player1_present': True,
     }
     for key, value in extra_keys.items():
         values[gp+key] = value
@@ -98,15 +104,18 @@ def getauthcookie(rawcookie):
     for ck in cookiearr:
         if len(ck)>1:
             cookies[ck[0]]=ck[1]
-    authcookie = cookies['rps'];
+    if 'rps' in cookies:
+        authcookie = cookies['rps'];
+        return authcookie
+    else:
+        return None
 
-    return authcookie
 
 
-
-gamere = re.compile('^\/([0-9a-f]{4})$')
-websocketre = re.compile('^\/websocket/([0-9a-f]{4})$')
-
+gamere = re.compile('^([0-9a-f]{4})$')
+#websocketre = re.compile('^\/websocket/([0-9a-f]{4})$')
+websocketre = re.compile('^socket\.io(.*)$')
+infore = re.compile('^info\/([0-9a-f]{4})$')
 def get_tplvars(game_id,i_am,game):
     rt= {
         'gameid':game_id,
@@ -117,6 +126,7 @@ def get_tplvars(game_id,i_am,game):
         'outcome':game['outcome'],
         'rematch':game['rematch']
         }
+
     rt['oponent_moved']=False
     if i_am =='player1':
         rt['mysel']=game['p1sel']
@@ -127,10 +137,17 @@ def get_tplvars(game_id,i_am,game):
     else: rt['mysel']=None
     return rt
 
+static={}
+
 def hello_world(env, start_response):
-    gameres = gamere.search(env['PATH_INFO'])
-    websocketres = websocketre.search(env['PATH_INFO'])
-    
+    global static
+    path = env['PATH_INFO'].strip('/')
+    gameres = gamere.search(path)
+    websocketres = websocketre.search(path)
+    infores = infore.search(path)
+    if infores:
+        start_response('200 OK', [('Content-Type','text/plain')])
+        return json.dumps(get_game(infores.group(1))).replace(',',',\n')
     if gameres:
         game_id = gameres.group(1)
 
@@ -144,17 +161,24 @@ def hello_world(env, start_response):
         respond = True
 
         nheads = [('Content-Type', 'text/html')]
-        
-        if authcookie == game['p1cookie']:
+
+        print 'COOKIES: %s, %s ; CONDS: %s,%s,%s'%(game['p1cookie'],game['p2cookie'],bool(authcookie),authcookie==game['p1cookie'],authcookie==game['p2cookie'])
+        if authcookie and notfalse(game['p1cookie']) and authcookie == game['p1cookie']:
+            print 'AM PLAYER1'
             i_am = 'player1'
-        elif authcookie == game['p2cookie']:
+        elif authcookie and notfalse(game['p2cookie']) and authcookie == game['p2cookie']:
+            print 'AM PLAYER2'
             i_am = 'player2'
-        elif not game['p2cookie']:
+        elif not notfalse(game['p2cookie']):
+            print 'AM NEW PLAYER2'            
             i_am = 'player2'
             p2cookie =  nowhex()[:8]
             nheads.append(('Set-Cookie','rps=%s'%p2cookie))
-            updgame(game_id,{'p2cookie':p2cookie,'player2_present':True},i_am)
-            game['presence']['player2']=True
+            updgame(game_id,{'p2cookie':p2cookie},i_am)
+            #game['presence']['player2']=True
+        else:
+            print 'AM SPECTATOR'
+            
         start_response('200 OK', nheads)
         
         tplvars = get_tplvars(game_id,i_am,game)
@@ -171,78 +195,84 @@ def hello_world(env, start_response):
 
         tpls['rps'].render_context(ctx)
         return buf.getvalue()
-    elif env['PATH_INFO'].split('/')[1]=='static' and '..' not in env['PATH_INFO']:
-        print 'STATIC %s'%env['PATH_INFO']
-        if re.compile('\.js$').search(env['PATH_INFO']):
+    elif path.split('/')[0]=='static' and '..' not in path:
+        print 'STATIC %s'%path
+        if re.compile('\.js$').search(path):
             start_response('200 OK', [('Content-Type', 'text/javascript')])
+        elif re.compile('\.swf$').search(path):
+            start_response('200 OK',[('Content-Type','application/x-shockwave-flash')])
         else:
             raise Exception('unknown doc')
-        with open(env['PATH_INFO'][1:]) as jfn:
-            return jfn.read()
-    elif env['PATH_INFO'] == '/':
+        fn = path
+        jfn = open(path) ; return jfn
+
+        
+    elif path == '':
         start_response('200 OK', [('Content-Type', 'text/html')])
         return tpls['home'].render(data={})
-    elif env['PATH_INFO']=='/new_game':
+    elif path=='new_game':
         p1cookie = nowhex()[:8]
         game_id = get_new_game_id(p1cookie=p1cookie)
         start_response('302 Found',[('Location','/%s'%game_id),('Set-Cookie','rps=%s'%p1cookie)])
         return 'redirecting to game %s'%game_id
     elif websocketres:
-        data = {'gameid':websocketres.group(1)
-                ,'game':get_game(websocketres.group(1))
+        data = {'gameid':None #websocketres.group(1)
+                ,'game':None #get_game(websocketres.group(1))
                 ,'cook':None
                 ,'i_am':'spectator'}
         #= getauthcookie('HTTP_COOKIE' in env and env['HTTP_COOKIE'] or None)
         #raise Exception(env)
-        print 'INCOMING WEBSOCKET game %s.'%(data['gameid'])
+        print 'INCOMING WEBSOCKET'
         zmq_sub_socket = context.socket(zmq.SUB)
         zmq_sub_socket.connect ("ipc://rps.events.ipc")
 
 
         start_response('200 OK',[('Content-Type','application/json')])
-        ws = env["wsgi.websocket"]
-
+        ws = env['socketio'] #"wsgi.websocket"]
         def websocket_handler(ws,zmq_pub_socket):
-            print 'WEBSOCKETHANDLER, SUBSCRIBING TO %s'%data['gameid']
-            zmq_sub_socket.setsockopt_unicode(zmq.SUBSCRIBE,unicode(data['gameid'])) #we take all messages for now
+            print 'WEBSOCKETHANDLER'
+
             while True:
-                message = ws.wait()
-                print 'message %s arrived'%message
-                if message:
-                    d = json.loads(message)
-                    if d['op']=='send_chat':
-                        d['user']=data['i_am']
-                        zmq_pub_socket.send_unicode(u'%s;;;;%s'%(data['gameid'],json.dumps(d)))
-                        print 'published the message %s'%message
-                    elif d['op']=='connect':
-                        assert data['gameid']==d['gameid']
-                        cook = data['cook'] = getauthcookie(d['rawcookie'])
-                        if (cook == data['game']['p1cookie']): data['i_am']='player1'
-                        elif (cook == data['game']['p2cookie']): data['i_am']='player2'
-                        updgame(data['gameid'],{"%s_present"%data['i_am']:True})
-                        #r.set('game:%s:%s_present'%(data['gameid'],data['i_am'],True))
-                        
-                        print 'ASSIGNED GAME ID via cookie %s; role is %s'%(cook,data['i_am'])
-                    elif d['op']=='selval':
-                        tgm = get_game(data['gameid'])
-                        if tgm['outcome']:
-                            print 'outcome already set. cancelling'
+                messages = ws.recv() #ws.wait()
+                print '%s arrived'%messages
+                for message in messages:
+                    if message:
+                        d = json.loads(message)
+                        if d['op']=='send_chat':
+                            d['user']=data['i_am']
+                            zmq_pub_socket.send_unicode(u'%s;;;;%s'%(data['gameid'],json.dumps(d)))
+                            print 'published the message %s on %s'%(message,data['gameid'])
+                        elif d['op']=='connect':
+                            data['gameid']=d['gameid']
+                            data['game']=get_game(d['gameid'])
+                            cook = data['cook'] = getauthcookie(d['rawcookie'])
+                            if (cook == data['game']['p1cookie']): data['i_am']='player1'
+                            elif (cook == data['game']['p2cookie']): data['i_am']='player2'
+                            updgame(data['gameid'],{"%s_present"%data['i_am']:True})
+                            #r.set('game:%s:%s_present'%(data['gameid'],data['i_am'],True))
+                            print 'SUBSCRIBING TO %s'%data['gameid']
+                            zmq_sub_socket.setsockopt_unicode(zmq.SUBSCRIBE,unicode(data['gameid'])) #we take all messages for now
+                            print 'ASSIGNED GAME ID via cookie %s; role is %s'%(cook,data['i_am'])
+                        elif d['op']=='selval':
+                            tgm = get_game(data['gameid'])
+                            if tgm['outcome']:
+                                print 'outcome already set. cancelling'
+                            else:
+                                if cook == tgm['p1cookie']: updgame(data['gameid'],{'p1sel':d['val']},data['i_am'])
+                                elif cook == tgm['p2cookie']: updgame(data['gameid'],{'p2sel':d['val']},data['i_am'])
+                                else: raise Exception( "unauthorized attempt to move in game "+data['gameid']+' by '+cook)
+                        elif d['op']=='offer_rematch':
+                            ngameid = get_new_game_id(**{"p1cookie":data['game']['p1cookie'],"p2cookie":data['game']['p2cookie']})
+                            updgame(data['gameid'],{"rematch":ngameid},data['i_am'])
+                            ws.send(json.dumps({"op":"rematch_created","game_id":ngameid}))
                         else:
-                            if cook == tgm['p1cookie']: updgame(data['gameid'],{'p1sel':d['val']},data['i_am'])
-                            elif cook == tgm['p2cookie']: updgame(data['gameid'],{'p2sel':d['val']},data['i_am'])
-                            else: raise Exception( "unauthorized attempt to move in game "+data['gameid']+' by '+cook)
-                    elif d['op']=='offer_rematch':
-                        ngameid = get_new_game_id(**{"p1cookie":data['game']['p1cookie'],"p2cookie":data['game']['p2cookie']})
-			updgame(data['gameid'],{"rematch":ngameid},data['i_am'])
-                        ws.send(json.dumps({"op":"rematch_created","game_id":ngameid}))
+                            raise Exception(d)
                     else:
-                        raise Exception(d)
-                else:
-                    updgame(data['gameid'],{"%s_present"%data['i_am']:False})
-                    print 'received None in ws.wait(); breaking conn.'
-                    zmq_sub_socket.setsockopt_unicode(zmq.UNSUBSCRIBE,unicode(data['gameid'])) #UNSUB                    
-                    break
-                #ws.send(message)
+                        updgame(data['gameid'],{"%s_present"%data['i_am']:False})
+                        print 'received None in ws.wait(); breaking conn.'
+                        zmq_sub_socket.setsockopt_unicode(zmq.UNSUBSCRIBE,unicode(data['gameid'])) #UNSUB                    
+                        break
+                    #ws.send(message)
 
         def zmq_sub_handler(ws,zmq_sub_socket):
             while True:
@@ -251,6 +281,7 @@ def hello_world(env, start_response):
                 gameid,recv = recv.split(';;;;')
                 #print 'json parsing %s'%recv
                 o = json.loads(recv)
+                ws.send(json.dumps({'op':'noop'})) #noop is a workaround for likely buffered input on the client's websocket                
                 if o['op']=='send_chat':
                     ws.send(json.dumps(o))
                     print 'RECV CHAT on %s to %s'%(gameid,data['i_am'])
@@ -271,7 +302,7 @@ def hello_world(env, start_response):
                         zmq_sub_socket.setsockopt_unicode(zmq.UNSUBSCRIBE,unicode(data['gameid'])) #UNSUB
                         updgame(data['gameid'],{"%s_present"%data['i_am']:False})
                         
-                ws.send(json.dumps({'op':'noop'})) #noop is a workaround for likely buffered input on the client's websocket
+
         print 'instantiating gevent greenlets'
         gevent.joinall([gevent.spawn(websocket_handler,ws,zmq_pub_socket),gevent.spawn(zmq_sub_handler,ws,zmq_sub_socket)])
         print 'JOINED ALL'
@@ -280,5 +311,7 @@ def hello_world(env, start_response):
         return ['<h1>Not Found</h1>']
 
 print 'Serving on 8088...'
-gevent.pywsgi.WSGIServer(('', 8088), hello_world,handler_class=WebSocketHandler).serve_forever()
-                                    
+#gevent.pywsgi.WSGIServer(('', 8088), hello_world,handler_class=WebSocketHandler).serve_forever()
+
+#socketio
+SocketIOServer(('', 8088), hello_world, resource='socket.io').serve_forever() #websocketre
